@@ -3,12 +3,11 @@
 
 #include "Actors/MaterialControlVolume.h"
 #include "Components/BrushComponent.h"
-#include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Utils/ActorRenderUtilities.h"
 
 
-void FParameterHandler::Init(UMeshComponent* MeshComponent, const TArray<FCollectionScalarParameter>& InScalars, const TArray<FCollectionVectorParameter>& InVectors)
+void FParameterHandler::Init(UMeshComponent* MeshComponent, const TArray<FScalarParameter>& InScalars, const TArray<FVectorParameter>& InVectors)
 {
 	if (MeshComponent == nullptr || (InScalars.Num() <= 0 && InVectors.Num() <= 0))
 		return;
@@ -29,7 +28,7 @@ void FParameterHandler::Init(UMeshComponent* MeshComponent, const TArray<FCollec
 	bEnterOrOut = true;
 }
 
-void FParameterHandler::AddParameters(UMeshComponent* MeshComponent, const TArray<FCollectionScalarParameter>& InScalars, const TArray<FCollectionVectorParameter>& InVectors)
+void FParameterHandler::AddParameters(UMeshComponent* MeshComponent, const TArray<FScalarParameter>& InScalars, const TArray<FVectorParameter>& InVectors)
 {
 	const TArray<UMaterialInterface*> MaterialInterfaces = MeshComponent->GetMaterials();
 	for (int32 MaterialIndex = 0; MaterialIndex < MaterialInterfaces.Num(); ++MaterialIndex)
@@ -42,8 +41,11 @@ void FParameterHandler::AddParameters(UMeshComponent* MeshComponent, const TArra
 		for (int i = 0; i < InScalars.Num(); ++i)
 		{
 			float OutValue;
-			if (!MaterialInterface->GetScalarParameterValue(FMaterialParameterInfo(InScalars[i].ParameterName), OutValue, true))
+			if (!MaterialInterface->GetScalarParameterValue(
+				FMaterialParameterInfo(InScalars[i].ParameterName), OutValue, !InScalars[i].bForceChange))
+			{
 				continue;
+			}
 
 			UMaterialInstanceDynamic* DynamicMaterial = Cast<UMaterialInstanceDynamic>(MaterialInterface);
 			if (!DynamicMaterial)
@@ -52,7 +54,7 @@ void FParameterHandler::AddParameters(UMeshComponent* MeshComponent, const TArra
 			}
 
 			auto& Scalars = ScalarParameters.FindOrAdd(DynamicMaterial);
-			FScalarParameter Parameter(InScalars[i].ParameterName, OutValue, InScalars[i].DefaultValue);
+			FScalarParameterData Parameter(InScalars[i].ParameterName, OutValue, InScalars[i].DefaultValue);
 			if (Scalars.IsValidIndex(i))
 				Scalars[i] = Parameter;
 			else
@@ -62,8 +64,11 @@ void FParameterHandler::AddParameters(UMeshComponent* MeshComponent, const TArra
 		for (int i = 0; i < InVectors.Num(); ++i)
 		{
 			FLinearColor OutValue;
-			if (!MaterialInterface->GetVectorParameterValue(FMaterialParameterInfo(InVectors[i].ParameterName), OutValue, true))
+			if (!MaterialInterface->GetVectorParameterValue(
+				FMaterialParameterInfo(InVectors[i].ParameterName), OutValue, !InVectors[i].bForceChange))
+			{
 				continue;
+			}
 
 			UMaterialInstanceDynamic* DynamicMaterial = Cast<UMaterialInstanceDynamic>(MaterialInterface);
 			if (!DynamicMaterial)
@@ -72,7 +77,7 @@ void FParameterHandler::AddParameters(UMeshComponent* MeshComponent, const TArra
 			}
 
 			auto& Vector = VectorParameters.FindOrAdd(DynamicMaterial);
-			FVectorParameter Parameter(InVectors[i].ParameterName, OutValue, InVectors[i].DefaultValue);
+			FVectorParameterData Parameter(InVectors[i].ParameterName, OutValue, InVectors[i].DefaultValue);
 			if (Vector.IsValidIndex(i))
 				Vector[i] = Parameter;
 			else
@@ -108,8 +113,10 @@ void FParameterHandler::SwapParameters()
 	bEnterOrOut = false;
 }
 
-void FParameterHandler::Update(const float Delta, const float BlendTime)
+void FParameterHandler::Update(const UCurveFloat* Curve, const float Delta, const float BlendTime)
 {
+	check(Curve);
+
 	if (bCompleted)
 		return;
 
@@ -120,6 +127,7 @@ void FParameterHandler::Update(const float Delta, const float BlendTime)
 		BlendWeight = 1;
 	}
 
+	float lerpValue = Curve->GetFloatValue(BlendWeight);
 	for (const auto& ScalarPair : ScalarParameters)
 	{
 		auto& DynamicMaterial = ScalarPair.Key;
@@ -128,7 +136,7 @@ void FParameterHandler::Update(const float Delta, const float BlendTime)
 
 		for (const auto& Scalar : ScalarPair.Value)
 		{
-			DynamicMaterial->SetScalarParameterValue(Scalar.Name, FMath::Lerp(Scalar.BeginValue, Scalar.EndValue, BlendWeight));
+			DynamicMaterial->SetScalarParameterValue(Scalar.Name, FMath::Lerp(Scalar.BeginValue, Scalar.EndValue, lerpValue));
 		}
 	}
 	for (const auto& VectorPair : VectorParameters)
@@ -139,7 +147,7 @@ void FParameterHandler::Update(const float Delta, const float BlendTime)
 
 		for (const auto& Vector : VectorPair.Value)
 		{
-			DynamicMaterial->SetVectorParameterValue(Vector.Name, FMath::Lerp(Vector.BeginValue, Vector.EndValue, BlendWeight));
+			DynamicMaterial->SetVectorParameterValue(Vector.Name, FMath::Lerp(Vector.BeginValue, Vector.EndValue, lerpValue));
 		}
 	}
 }
@@ -173,7 +181,16 @@ void AMaterialControlVolume::TickActor(float DeltaTime, enum ELevelTick TickType
 
 		for (auto& Handler : HandlerPairs.Value)
 		{
-			Handler.Update(DeltaTime, BlendTime);
+			UCurveFloat* Curve;
+			if (Handler.IsEnterVolumeType())
+			{
+				Curve = EnterCurve;
+			}
+			else
+			{
+				Curve = OutCurve;
+			}
+			Handler.Update(Curve, DeltaTime, BlendTime);
 
 			// 刷新标志位
 			if (!Handler.IsCompleted())

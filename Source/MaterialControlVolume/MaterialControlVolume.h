@@ -8,13 +8,69 @@
 #include "MaterialControlVolume.generated.h"
 
 class UMaterialInstanceDynamic;
-struct FCollectionScalarParameter;
-struct FCollectionVectorParameter;
+class UCurveFloat;
 struct FTimerHandle;
 
-struct FScalarParameter
+
+/** Base struct for collection parameters */
+USTRUCT()
+struct FParameterBase
 {
-	FScalarParameter(FName InName, float InBeginValue, float InEndValue)
+	GENERATED_USTRUCT_BODY()
+
+	FParameterBase()
+	{
+		FPlatformMisc::CreateGuid(Id);
+	}
+
+	/** The name of the parameter.  Changing this name will break any blueprints that reference the parameter. */
+	UPROPERTY(EditAnywhere, Category=Parameter)
+	FName ParameterName;
+
+	/** Force to change parameter no matter it enabled or not. */
+	UPROPERTY(EditAnywhere, Category=Parameter)
+	bool bForceChange;
+
+	/** Uniquely identifies the parameter, used for fixing up materials that reference this parameter when renaming. */
+	UPROPERTY(meta = (IgnoreForMemberInitializationTest))
+	FGuid Id;
+};
+
+/** A scalar parameter */
+USTRUCT()
+struct FScalarParameter : public FParameterBase
+{
+	GENERATED_USTRUCT_BODY()
+
+	FScalarParameter()
+		: DefaultValue(0.0f)
+	{
+		ParameterName = FName(TEXT("Scalar"));
+	}
+
+	UPROPERTY(EditAnywhere, Category=Parameter)
+	float DefaultValue;
+};
+
+/** A vector parameter */
+USTRUCT()
+struct FVectorParameter : public FParameterBase
+{
+	GENERATED_USTRUCT_BODY()
+
+	FVectorParameter()
+		: DefaultValue(ForceInitToZero)
+	{
+		ParameterName = FName(TEXT("Vector"));
+	}
+
+	UPROPERTY(EditAnywhere, Category=Parameter)
+	FLinearColor DefaultValue;
+};
+
+struct FScalarParameterData
+{
+	FScalarParameterData(FName InName, float InBeginValue, float InEndValue)
 		: Name(InName), BeginValue(InBeginValue), EndValue(InEndValue)
 	{}
 
@@ -23,9 +79,9 @@ struct FScalarParameter
 	float EndValue;
 };
 
-struct FVectorParameter
+struct FVectorParameterData
 {
-	FVectorParameter(FName InName, FLinearColor InBeginValue, FLinearColor InEndValue)
+	FVectorParameterData(FName InName, FLinearColor InBeginValue, FLinearColor InEndValue)
 		: Name(InName), BeginValue(InBeginValue), EndValue(InEndValue)
 	{}
 
@@ -44,8 +100,8 @@ private:
 	/**
 	 * Parameters of each dynamic material.
 	 */
-	TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, TArray<FScalarParameter>> ScalarParameters;
-	TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, TArray<FVectorParameter>> VectorParameters;
+	TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, TArray<FScalarParameterData>> ScalarParameters;
+	TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, TArray<FVectorParameterData>> VectorParameters;
 
 	float BlendWeight;
 	bool bInited;
@@ -62,10 +118,10 @@ public:
 	bool IsCompleted() { return bCompleted; }
 	bool IsEnterVolumeType() { return bEnterOrOut; }
 
-	void Init(UMeshComponent* MeshComponent, const TArray<FCollectionScalarParameter>& InScalars, const TArray<FCollectionVectorParameter>& InVectors);
-	void AddParameters(UMeshComponent* MeshComponent, const TArray<FCollectionScalarParameter>& InScalars, const TArray<FCollectionVectorParameter>& InVectors);
+	void Init(UMeshComponent* MeshComponent, const TArray<FScalarParameter>& InScalars, const TArray<FVectorParameter>& InVectors);
+	void AddParameters(UMeshComponent* MeshComponent, const TArray<FScalarParameter>& InScalars, const TArray<FVectorParameter>& InVectors);
 	void SwapParameters();
-	void Update(const float Delta, const float BlendTime);
+	void Update(const UCurveFloat* Curve, const float Delta, const float BlendTime);
 };
 
 /** An invisible volume used to control material parameters */
@@ -81,13 +137,22 @@ private:
 	float BlendTime = 1;
 
 	/**
+	 * Change curve of material parameters.
+	 */
+	UPROPERTY(EditAnywhere, Category=MaterialParameters)
+	UCurveFloat* EnterCurve;
+
+	UPROPERTY(EditAnywhere, Category=MaterialParameters)
+	UCurveFloat* OutCurve;
+
+	/**
 	 * For change material property when actor enter this volume.
 	 */
 	UPROPERTY(EditAnywhere, Category=MaterialParameters)
-	TArray<FCollectionScalarParameter> ScalarParameters;
+	TArray<FScalarParameter> ScalarParameters;
 
 	UPROPERTY(EditAnywhere, Category=MaterialParameters)
-	TArray<FCollectionVectorParameter> VectorParameters;
+	TArray<FVectorParameter> VectorParameters;
 
 private:
 
