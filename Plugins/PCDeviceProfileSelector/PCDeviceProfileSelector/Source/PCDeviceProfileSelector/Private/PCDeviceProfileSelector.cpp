@@ -94,23 +94,26 @@ FString FPCDeviceProfileSelectorModule::FindMatchingProfile(const FString Device
 }
 
 FString FPCDeviceProfileSelectorModule::GetCleanedDeviceName(const FString Original, const EDeviceChipType ChipType) {
+    // 1. Lower
+    std::string LowerOriginal(TCHAR_TO_UTF8(*Original.ToLower()));
+
+    // 2. Match pattern.
     std::regex CleanPattern("");
     switch (ChipType) {
     case EDeviceChipType::CPU:
-        CleanPattern = "\\([^\\(\\)]*\\)|@.*$|^.*th gen|with.*radeon.*graphics|[\\w\\d]*-core processor|cpu";
+        CleanPattern = "\\([^\\(\\)]*\\)|@.*$|^.*th gen|with.*radeon.*graphics|[\\w\\d]*-core processor|cpu|processor|apu";
         break;
     case EDeviceChipType::GPU:
-        CleanPattern = "\\([^\\(\\)]*\\)|with.*radeon.*graphics|graphics|amd|ati|nvidia|adapter|series";
+        CleanPattern = "\\([^\\(\\)]*\\)|with.*radeon.*graphics|graphics|amd|ati|nvidia|adapter|series|gpu";
         break;
     default:
         break;
     }
-
-    std::string LowerOriginal(TCHAR_TO_UTF8(*Original.ToLower()));
     LowerOriginal = std::regex_replace(LowerOriginal, CleanPattern, "");
 
+    // 3. Replace two space to one and trim.
     FString Result = UTF8_TO_TCHAR(LowerOriginal.c_str());
-    Result = Result.TrimStartAndEnd().Replace(TEXT("  "), TEXT(" "));
+    Result = Result.Replace(TEXT("  "), TEXT(" ")).TrimStartAndEnd();
 
     return Result;
 }
